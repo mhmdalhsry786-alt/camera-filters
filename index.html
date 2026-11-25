@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="فلاتر">
+<meta name="theme-color" content="#000000">
+<title>فلاتر — كاميرا بإطارات لونية</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>
+  :root{
+    --bg:#000; --panel:#0d0d10; --line:#232329; --txt:#f2f2f5;
+    --dim:#8a8a96; --acc:#ffcf3f; --acc2:#ff6b4a;
+    --sat: env(safe-area-inset-top); --sab: env(safe-area-inset-bottom);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Arabic","Segoe UI",system-ui,sans-serif;
+    overflow:hidden;overscroll-behavior:none;-webkit-user-select:none;user-select:none;}
+
+  #app{position:fixed;inset:0;display:flex;flex-direction:column;}
+
+  /* ===== شاشة التصوير ===== */
+  #stage{position:relative;flex:1;overflow:hidden;background:#000;}
+  #video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+    transform-origin:center;transition:filter .18s linear;}
+  #video.mirrored{transform:scaleX(-1);}
+
+  #grain,#vignette{position:absolute;inset:0;pointer-events:none;display:none;}
+  #grain{opacity:.16;mix-blend-mode:overlay;background-repeat:repeat;}
+  #vignette{background:radial-gradient(ellipse at 50% 48%,transparent 42%,rgba(0,0,0,.72) 100%);}
+
+  #grid{position:absolute;inset:0;pointer-events:none;display:none;}
+  #grid::before,#grid::after{content:"";position:absolute;background:rgba(255,255,255,.28);}
+  #grid::before{left:33.33%;right:33.33%;top:0;bottom:0;border-left:1px solid rgba(255,255,255,.28);
+    border-right:1px solid rgba(255,255,255,.28);background:transparent;}
+  #grid::after{top:33.33%;bottom:33.33%;left:0;right:0;border-top:1px solid rgba(255,255,255,.28);
+    border-bottom:1px solid rgba(255,255,255,.28);background:transparent;}
+
+  /* شريط علوي */
+  #top{position:absolute;top:0;left:0;right:0;padding:calc(var(--sat) + 10px) 14px 12px;
+    display:flex;align-items:center;justify-content:space-between;gap:10px;
+    background:linear-gradient(180deg,rgba(0,0,0,.72),transparent);z-index:5;}
+  .ico-btn{width:42px;height:42px;border-radius:50%;border:1px solid rgba(255,255,255,.16);
+    background:rgba(18,18,22,.55);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+    color:#fff;display:grid;place-items:center;font-size:18px;line-height:1;padding:0;cursor:pointer;}
+  .ico-btn.on{background:var(--acc);color:#000;border-color:var(--acc);}
+  .ico-btn:active{transform:scale(.92);}
+  #filterName{font-size:14px;font-weight:600;letter-spacing:.2px;
+    padding:8px 16px;border-radius:999px;background:rgba(18,18,22,.6);
+    backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.12);}
+
+  /* ===== شريط الفلاتر ===== */
+  #filters{position:relative;z-index:4;background:linear-gradient(0deg,#000 72%,transparent);
+    padding:6px 0 2px;}
+  #fstrip{display:flex;gap:12px;overflow-x:auto;overflow-y:hidden;padding:8px 14px 10px;
+    scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch;scrollbar-width:none;}
+  #fstrip::-webkit-scrollbar{display:none;}
+  .fitem{flex:0 0 auto;width:64px;scroll-snap-align:center;background:none;border:0;padding:0;cursor:pointer;}
+  .fdot{width:64px;height:64px;border-radius:16px;overflow:hidden;position:relative;
+    border:2px solid transparent;background:#1a1a1f;transition:border-color .15s,transform .15s;}
+  .fitem.sel .fdot{border-color:var(--acc);transform:translateY(-2px);}
+  .fdot canvas{width:100%;height:100%;display:block;object-fit:cover;}
+  .fname{display:block;text-align:center;font-size:11px;margin-top:6px;color:var(--dim);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .fitem.sel .fname{color:var(--acc);font-weight:600;}
+
+  /* ===== شريط التحكم ===== */
+  #controls{position:relative;z-index:4;background:#000;
+    padding:2px 22px calc(var(--sab) + 14px);display:flex;align-items:center;justify-content:space-between;}
+  .ctl{display:flex;flex-direction:column;align-items:center;gap:5px;color:var(--dim);
+    background:none;border:0;font-size:10px;padding:4px;cursor:pointer;min-width:56px;font-family:inherit;}
+  .ctl .big{font-size:20px;line-height:1;}
+  .ctl.on{color:var(--acc);}
+
+  #shutter{width:76px;height:76px;border-radius:50%;border:4px solid #fff;background:transparent;
+    padding:5px;cursor:pointer;flex:0 0 auto;}
+  #shutter i{display:block;width:100%;height:100%;border-radius:50%;background:#fff;
+    transition:transform .1s, background .15s;}
+  #shutter:active i{transform:scale(.86);}
+  #shutter.rec i{border-radius:14%;background:var(--acc2);}
+
+  /* عدّاد */
+  #timerNum{position:absolute;inset:0;display:none;place-items:center;z-index:6;
+    font-size:110px;font-weight:200;color:#fff;text-shadow:0 4px 40px rgba(0,0,0,.7);pointer-events:none;}
+
+  /* فلاش الشاشة */
+  #flash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:60;
+    transition:opacity .09s;}
+
+  /* ===== شاشة النتيجة ===== */
+  #result{position:fixed;inset:0;background:#000;z-index:80;display:none;flex-direction:column;}
+  #result.show{display:flex;}
+  #rhead{padding:calc(var(--sat) + 12px) 16px 12px;display:flex;justify-content:space-between;align-items:center;}
+  #rhead b{font-size:15px;font-weight:600;}
+  #rimg{flex:1;display:grid;place-items:center;padding:0 10px;min-height:0;}
+  #rimg img{max-width:100%;max-height:100%;border-radius:10px;object-fit:contain;}
+  #ractions{padding:16px 18px calc(var(--sab) + 20px);display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}
+  .btn{border:0;border-radius:14px;padding:14px 22px;font-size:15px;font-weight:600;
+    font-family:inherit;cursor:pointer;display:flex;align-items:center;gap:8px;}
+  .btn.primary{background:var(--acc);color:#000;flex:1;justify-content:center;}
+  .btn.ghost{background:#1b1b21;color:#eee;border:1px solid #2b2b33;}
+  .btn:active{transform:scale(.97);}
+  #hint{font-size:12px;color:var(--dim);text-align:center;padding:0 24px 14px;line-height:1.6;}
+
+  /* شاشة البدء / الرسائل */
+  #gate{position:fixed;inset:0;z-index:100;background:#08080a;display:flex;
+    flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:32px;text-align:center;}
+  #gate h1{margin:0;font-size:30px;font-weight:700;letter-spacing:-.5px;}
+  #gate h1 span{color:var(--acc);}
+  #gate p{margin:0;color:var(--dim);font-size:15px;line-height:1.8;max-width:330px;}
+  #startBtn{background:var(--acc);color:#000;border:0;border-radius:999px;
+    padding:17px 46px;font-size:17px;font-weight:700;font-family:inherit;cursor:pointer;}
+  #startBtn:active{transform:scale(.97);}
+  .cf{position:absolute;bottom:calc(var(--sab) + 22px);font-size:11px;color:#4a4a55;}
+
+  /* معرض مصغر */
+  #offlineBadge{position:absolute;right:14px;top:calc(var(--sat) + 62px);z-index:5;
+    font-size:10.5px;padding:6px 10px;border-radius:999px;display:none;
+    background:rgba(18,18,22,.72);border:1px solid rgba(255,255,255,.12);
+    color:#8a8a96;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);}
+  #offlineBadge.ok{display:block;color:#7ee787;border-color:rgba(126,231,135,.3);}
+  #offlineBadge.warn{display:block;color:#ffb4a0;border-color:rgba(255,180,160,.3);}
+  #mini{position:absolute;left:14px;top:calc(var(--sat) + 62px);z-index:5;
+    width:52px;height:52px;border-radius:12px;border:1px solid rgba(255,255,255,.25);
+    background-size:cover;background-position:center;display:none;
+    box-shadow:0 4px 18px rgba(0,0,0,.5);}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="stage">
+    <video id="video" playsinline autoplay muted></video>
+    <div id="grain"></div>
+    <div id="vignette"></div>
+    <div id="grid"></div>
+    <div id="timerNum"></div>
+    <div id="mini"></div>
+    <div id="offlineBadge" class="offbadge"></div>
+
+    <div id="top">
+      <button class="ico-btn" id="flip" aria-label="تبديل الكاميرا">⟲</button>
+      <div id="filterName">أصلي</div>
+      <button class="ico-btn" id="gear" aria-label="إعدادات">⚙</button>
+    </div>
+  </div>
+
+    <input type="file" id="lutFile" accept=".cube,text/plain" style="display:none">
+  <div id="filters">
+    <div id="fstrip"></div>
+  </div>
+
+  <div id="controls">
+    <button class="ctl" id="btnTimer"><span class="big">⏱</span><span id="timerLbl">مؤقت</span></button>
+    <button class="ctl" id="btnGrid"><span class="big">▦</span><span>شبكة</span></button>
+    <button id="shutter" aria-label="التقاط"><i></i></button>
+    <button class="ctl" id="btnFx"><span class="big">✧</span><span>تأثيرات</span></button>
+    <button class="ctl" id="btnHi"><span class="big">◐</span><span>جودة</span></button>
+  </div>
+</div>
+
+<div id="flash"></div>
+
+<div id="result">
+  <div id="rhead">
+    <b>اللقطة</b>
+    <button class="ico-btn" id="rclose" aria-label="إغلاق">✕</button>
+  </div>
+  <div id="rimg"><img id="rimgEl" alt="اللقطة"></div>
+  <div id="hint">إن لم تُحفظ في الصور: اضغط «مشاركة» ثم «حفظ الصورة».</div>
+  <div id="ractions">
+    <button class="btn ghost" id="rsave">تنزيل</button>
+    <button class="btn primary" id="rshare">مشاركة / حفظ</button>
+  </div>
+</div>
+
+<div id="gate">
+  <h1>فلاتر<span>.</span></h1>
+  <p>كاميرا بإطارات لونية جاهزة.<br>كل شيء يعمل داخل المتصفح — لا يرفع صورك لأي مكان.</p>
+  <button id="startBtn">تشغيل الكاميرا</button>
+  <div id="gateStatus" style="font-size:12px;color:#8a8a96;margin-top:-6px;min-height:18px"></div>
+  <div class="cf">نسخة 1.1 · تعمل على iPhone و Android</div>
+</div>
+
+<script>
+"use strict";
+
+/* ==========================================================
+   1) تعريف الفلاتر — كل فلتر يُترجم إلى:
+      (أ) نص CSS للمعاينة الحيّة
+      (ب) مصفوفة 3×3 + إزاحة لحرق الفلتر داخل الصورة
+   ========================================================== */
+const FILTERS = [
+  {id:"none",    name:"أصلي",     ops:{}},
+  {id:"warm",    name:"دافئ",     ops:{sepia:.20, saturate:1.32, brightness:1.05, contrast:1.04}},
+  {id:"cool",    name:"بارد",     ops:{hue:-12,   saturate:1.18, brightness:1.03, contrast:1.03}},
+  {id:"mono",    name:"أبيض وأسود", ops:{gray:1, contrast:1.14, brightness:1.02}},
+  {id:"mono2",   name:"رصاصي",    ops:{gray:.72, contrast:1.26, saturate:.9}},
+  {id:"vintage", name:"فينتاج",   ops:{sepia:.46, saturate:.82, contrast:1.16, brightness:.96}},
+  {id:"cine",    name:"سينمائي",  ops:{contrast:1.38, saturate:.86, brightness:.93, hue:-4}},
+  {id:"vivid",   name:"حيوي",     ops:{saturate:1.66, contrast:1.12, brightness:1.03}},
+  {id:"soft",    name:"ناعم",     ops:{brightness:1.14, saturate:.94, contrast:.94}},
+  {id:"drama",   name:"درامي",    ops:{contrast:1.52, brightness:.86, saturate:.92}},
+  {id:"film",    name:"فيلم",     ops:{sepia:.22, gray:.30, contrast:1.22, brightness:1.02}},
+  {id:"dream",   name:"حلم",      ops:{brightness:1.18, saturate:.86, contrast:.90, hue:6}},
+  {id:"y70",     name:"قديم ٧٠",   ops:{sepia:.70, saturate:.62, contrast:1.20, hue:-8}},
+  {id:"desert",  name:"صحراء",    ops:{sepia:.36, saturate:1.42, brightness:1.06, contrast:1.06}},
+  {id:"neon",    name:"نيون",     ops:{saturate:2.05, contrast:1.22, hue:-6}},
+  {id:"noir",    name:"نوار",     ops:{gray:1, contrast:1.55, brightness:.92}},
+  {id:"sunset",  name:"غروب",     ops:{sepia:.28, saturate:1.5, hue:-14, brightness:1.04, contrast:1.08}},
+  {id:"mint",    name:"نعناعي",   ops:{hue:22, saturate:1.22, brightness:1.06, contrast:.98}},
+];
+
+/* ---- أدوات المصفوفات (لونية) ---- */
+const I3 = [[1,0,0],[0,1,0],[0,0,1]];
+function mul(A,B){ // A×B
+  const R=[[0,0,0],[0,0,0],[0,0,0]];
+  for(let i=0;i<3;i++)for(let j=0;j<3;j++){let s=0;for(let k=0;k<3;k++)s+=A[i][k]*B[k][j];R[i][j]=s;}
+  return R;
+}
+function applyM(M,v){return [M[0][0]*v[0]+M[0][1]*v[1]+M[0][2]*v[2],
+                            M[1][0]*v[0]+M[1][1]*v[1]+M[1][2]*v[2],
+                            M[2][0]*v[0]+M[2][1]*v[1]+M[2][2]*v[2]];}
+
+const M_GRAY = a => (a>=1? [[.2126,.7152,.0722],[.2126,.7152,.0722],[.2126,.7152,.0722]]
+ : [[1-(1-.2126)*a, -.7152*a, -.0722*a],
+    [-.2126*a, 1-(1-.7152)*a, -.0722*a],
+    [-.2126*a, -.7152*a, 1-(1-.0722)*a]]);
+const M_SEPIA = a => {
+  const S=[[.393,.769,.189],[.349,.686,.168],[.272,.534,.131]];
+  return S.map((row,i)=>row.map((x,j)=> I3[i][j]*(1-a)+x*a));
+};
+const M_SAT = s => [[.213+.787*s, .715-.715*s, .072-.072*s],
+                    [.213-.213*s, .715+.285*s, .072-.072*s],
+                    [.213-.213*s, .715-.715*s, .072+.928*s]];
+const M_HUE = deg => {
+  const r=deg*Math.PI/180, c=Math.cos(r), s=Math.sin(r);
+  return [[.213+c*.787-s*.213, .715-c*.715-s*.715, .072-c*.072+s*.928],
+          [.213-c*.213+s*.143, .715+c*.285+s*.140, .072-c*.072-s*.283],
+          [.213-c*.213-s*.787, .715-c*.715+s*.715, .072+c*.928+s*.072]];
+};
+
+
+/* ==========================================================
+   محرك LUT ثلاثي الأبعاد (يقرأ ملفات .cube)
+   ========================================================== */
+const LUT = { n:0, grid:null, name:"", on:false };
+let _lutMap=null;              // Float32Array 3*3*3*3*3*3=2187 (33^3*3)
+
+function lutAlloc(n){
+  _lutMap = new Float32Array(n*n*n*3);
+}
+function lutSet(r,g,b, R,G,B, n){
+  const i=((b*n+g)*n+r)*3;
+  _lutMap[i]=R; _lutMap[i+1]=G; _lutMap[i+2]=B;
+}
+/* تطبيق بثلاثي خطي على قيمة 0..255 */
+function lutApply(r8,g8,b8){
+  if(!LUT.on || !_lutMap) return [r8,g8,b8];
+  const n=LUT.n, top=n-1;
+  const fx=r8/255*top, fy=g8/255*top, fz=b8/255*top;
+  let x0=fx|0, y0=fy|0, z0=fz|0;
+  if(x0>top-1)x0=top-1; if(y0>top-1)y0=top-1; if(z0>top-1)z0=top-1;
+  const dd=(a,b,c)=>(((z0+c)*n+(y0+b))*n+(x0+a))*3;
+  const tx=fx-x0, ty=fy-y0, tz=fz-z0, m=_lutMap;
+  const o000=dd(0,0,0),o100=dd(1,0,0),o010=dd(0,1,0),o110=dd(1,1,0),
+        o001=dd(0,0,1),o101=dd(1,0,1),o011=dd(0,1,1),o111=dd(1,1,1);
+  const out=[0,0,0];
+  for(let k=0;k<3;k++){
+    const c00=m[o000+k]*(1-tx)+m[o100+k]*tx;
+    const c10=m[o010+k]*(1-tx)+m[o110+k]*tx;
+    const c01=m[o001+k]*(1-tx)+m[o101+k]*tx;
+    const c11=m[o011+k]*(1-tx)+m[o111+k]*tx;
+    const c0=c00*(1-ty)+c10*ty, c1=c01*(1-ty)+c11*ty;
+    out[k]=(c0*(1-tz)+c1*tz)*255;
+  }
+  return out;
+}
+/* متحلّل .cube صغير: يدعم 17/33/65 نقطة، ومقاييس DOMAIN */
+function parseCube(text){
+  const lines=text.split(/\r?\n/);
+  let n=0, dmin=[0,0,0], dmax=[1,1,1], title="";
+  const vals=[];
+  for(const raw of lines){
+    const line=raw.trim();
+    if(!line || line[0]==="#") continue;
+    const up=line.toUpperCase();
+    if(up.startsWith("LUT_3D_SIZE")){ n=parseInt(line.split(/\s+/)[1],10); continue; }
+    if(up.startsWith("LUT_1D_SIZE")) return {error:"LUT_1D غير مدعوم — استخدم 3D"};
+    if(up.startsWith("TITLE")){ title=line.replace(/^TITLE\s*/i,"").replace(/^"|"$/g,""); continue; }
+    if(up.startsWith("DOMAIN_MIN")){ dmin=line.split(/\s+/).slice(1,4).map(Number); continue; }
+    if(up.startsWith("DOMAIN_MAX")){ dmax=line.split(/\s+/).slice(1,4).map(Number); continue; }
+    const p=line.split(/\s+/);
+    if(p.length>=3){
+      const a=parseFloat(p[0]),b=parseFloat(p[1]),c=parseFloat(p[2]);
+      if(isFinite(a)&&isFinite(b)&&isFinite(c)) vals.push(a,b,c);
+    }
+  }
+  if(!n) return {error:"لا يوجد LUT_3D_SIZE"};
+  if(vals.length/3 !== n*n*n) return {error:`عدد القيم ${vals.length/3} لا يساوي ${n}³`};
+  lutAlloc(Math.min(n,65));
+  const N=Math.min(n,65);
+  // ترتيب الملف: الأحمر أسرع → blue خارجي
+  let idx=0;
+  for(let b=0;b<N;b++)for(let g=0;g<N;g++)for(let r=0;r<N;r++){
+    lutSet(r,g,b, vals[idx],vals[idx+1],vals[idx+2], N); idx+=3;
+  }
+  LUT.n=N; LUT.name=title||"LUT"; LUT.on=true;
+  return {n:N, title:title};
+}
+async function loadCubeFile(file){
+  const text=await file.text();
+  const res=parseCube(text);
+  if(res.error){ alert("ملف LUT غير صالح: "+res.error); return null; }
+  return res;
+}
+
+/* CSS string in canonical order  (نفس ترتيب الحساب بالأسفل) */
+function cssOf(ops){
+  const p=[];
+  if(ops.gray)       p.push(`grayscale(${ops.gray})`);
+  if(ops.sepia)      p.push(`sepia(${ops.sepia})`);
+  if(ops.saturate!==undefined) p.push(`saturate(${ops.saturate})`);
+  if(ops.hue)        p.push(`hue-rotate(${ops.hue}deg)`);
+  if(ops.brightness!==undefined) p.push(`brightness(${ops.brightness})`);
+  if(ops.contrast!==undefined) p.push(`contrast(${ops.contrast})`);
+  return p.length? p.join(" ") : "none";
+}
+
+/* matrix+offset for capture */
+function matrixOf(ops){
+  let M=I3, off=[0,0,0];
+  const addM=m=>{ M=mul(m,M); };
+  if(ops.gray)  addM(M_GRAY(ops.gray));
+  if(ops.sepia) addM(M_SEPIA(ops.sepia));
+  if(ops.saturate!==undefined) addM(M_SAT(ops.saturate));
+  if(ops.hue)   addM(M_HUE(ops.hue));
+  if(ops.brightness!==undefined){ const b=ops.brightness; addM([[b,0,0],[0,b,0],[0,0,b]]); }
+  if(ops.contrast!==undefined){ const c=ops.contrast; addM([[c,0,0],[0,c,0],[0,0,c]]);
+    off=[off[0]+128*(1-c), off[1]+128*(1-c), off[2]+128*(1-c)]; }
+  // الإزاحة تمرّ عبر المصفوفة المتراكمة قبل contrast — تبسيط آمن لأن contrast آخر عملية
+  return {M, off};
+}
+
+/* ==========================================================
+   2) الحالة
+   ========================================================== */
+const S = {
+  stream:null, facing:"environment", filterId:"none",
+  timer:0, grid:false, grain:false, vignette:false, hq:true,
+  lastBlob:null, lastURL:null
+};
+const $ = id => document.getElementById(id);
+const video=$("video"), fstrip=$("fstrip");
+
+/* ==========================================================
+   3) الكاميرا
+   ========================================================== */
+async function startCamera(){
+  const c = { audio:false, video:{
+      facingMode: S.facing==="user" ? "user" : {exact:"environment"},
+      width:{ideal: S.hq?3840:1920}, height:{ideal: S.hq?2160:1080}
+  }};
+  if(S.stream){ S.stream.getTracks().forEach(t=>t.stop()); S.stream=null; }
+  try{
+    S.stream = await navigator.mediaDevices.getUserMedia(c);
+  }catch(e){
+    try{ // احتياطي: بدون قيود دقة
+      S.stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:S.facing}, audio:false});
+    }catch(e2){
+      alert("لم يُسمح بالكاميرا.\nتأكد أنك تفتح الرابط بـ HTTPS، ثم:\nالإعدادات ← Safari ← الكاميرا ← السماح.");
+      throw e2;
+    }
+  }
+  video.srcObject = S.stream;
+  await video.play().catch(()=>{});
+  video.classList.toggle("mirrored", S.facing==="user");
+  $("gate").style.display="none";
+  requestAnimationFrame(sizeGrain);
+}
+
+function sizeGrain(){
+  // نولّد حبيبات كصورة data-URI مرة واحدة
+  if($("grain").dataset.ready) return;
+  const c=document.createElement("canvas"); c.width=c.height=140;
+  const ctx=c.getContext("2d"); const im=ctx.createImageData(140,140);
+  for(let i=0;i<im.data.length;i+=4){
+    const v=Math.random()*255|0;
+    im.data[i]=im.data[i+1]=im.data[i+2]=v; im.data[i+3]=26;
+  }
+  ctx.putImageData(im,0,0);
+  $("grain").style.backgroundImage=`url(${c.toDataURL()})`;
+  $("grain").dataset.ready="1";
+}
+
+/* ==========================================================
+   4) شريط الفلاتر + صور مصغّرة حيّة
+   ========================================================== */
+function buildStrip(){
+  fstrip.innerHTML="";
+  /* عنصر استيراد LUT */
+  const imp=document.createElement("button");
+  imp.className="fitem"; imp.id="lutItem";
+  imp.innerHTML=`<div class="fdot" style="display:grid;place-items:center;font-size:22px;color:#7ee787">＋</div>
+                 <span class="fname">LUT</span>`;
+  imp.addEventListener("click",()=>$("lutFile").click());
+  fstrip.appendChild(imp);
+  FILTERS.forEach(f=>{
+    const b=document.createElement("button");
+    b.className="fitem"+(f.id===S.filterId?" sel":"");
+    b.dataset.id=f.id;
+    b.innerHTML=`<div class="fdot"><canvas width="128" height="128"></canvas></div>
+                 <span class="fname">${f.name}</span>`;
+    b.addEventListener("click",()=>selectFilter(f.id));
+    fstrip.appendChild(b);
+  });
+}
+function selectFilter(id){
+  S.filterId=id;
+  const f=FILTERS.find(x=>x.id===id)||FILTERS[0];
+  video.style.filter=cssOf(f.ops);
+  $("filterName").textContent=f.name;
+  [...fstrip.children].forEach(el=>el.classList.toggle("sel", el.dataset.id===id));
+  paintThumbs();
+}
+
+/* الصور المصغّرة: نرسم إطارًا من الفيديو ونطبّق عليه الفلاتر */
+let thumbSrc=null, thumbTick=0;
+function grabThumb(){
+  if(!video.videoWidth) return;
+  const w=160, h=160;
+  const c=document.createElement("canvas"); c.width=w; c.height=h;
+  const ctx=c.getContext("2d",{willReadFrequently:true});
+  const vw=video.videoWidth, vh=video.videoHeight;
+  const side=Math.min(vw,vh);
+  ctx.drawImage(video,(vw-side)/2,(vh-side)/2,side,side,0,0,w,h);
+  thumbSrc=ctx.getImageData(0,0,w,h);
+}
+function paintThumbs(){
+  if(!thumbSrc) return;
+  [...fstrip.children].forEach(el=>{
+    const f=FILTERS.find(x=>x.id===el.dataset.id); if(!f) return;
+    const cv=el.querySelector("canvas");
+    const ctx=cv.getContext("2d");
+    const img=new ImageData(new Uint8ClampedArray(thumbSrc.data), thumbSrc.width, thumbSrc.height);
+    const {M,off}=matrixOf(f.ops);
+    const d=img.data;
+    for(let i=0;i<d.length;i+=4){
+      let r=d[i],g=d[i+1],b=d[i+2];
+      if(LUT.on){ const o=lutApply(r,g,b); r=o[0]; g=o[1]; b=o[2]; }
+      d[i]  =M[0][0]*r+M[0][1]*g+M[0][2]*b+off[0];
+      d[i+1]=M[1][0]*r+M[1][1]*g+M[1][2]*b+off[1];
+      d[i+2]=M[2][0]*r+M[2][1]*g+M[2][2]*b+off[2];
+    }
+    ctx.putImageData(img,0,0);
+  });
+}
+setInterval(()=>{ // تحديث المصغّرات كل 1.6 ثانية أثناء التصوير
+  if(!S.stream) return;
+  thumbTick++; if(thumbTick%2) return;
+  grabThumb(); paintThumbs();
+},800);
+
+/* ==========================================================
+   5) الالتقاط (WYSIWYG: نفس القصّ الظاهر على الشاشة)
+   ========================================================== */
+function capture(){
+  if(!S.stream || !video.videoWidth){ return null; }
+  const stage=$("stage").getBoundingClientRect();
+  const vw=video.videoWidth, vh=video.videoHeight;
+  const scale=Math.max(stage.width/vw, stage.height/vh);
+  const sw=stage.width/scale, sh=stage.height/scale;   // المصدر الظاهر
+  const sx=(vw-sw)/2, sy=(vh-sh)/2;
+
+  const capW=Math.min(sw, S.hq?2400:1400);
+  const capH=Math.round(capW*sh/sw);
+  const cv=document.createElement("canvas");
+  cv.width=Math.round(capW); cv.height=capH;
+  const ctx=cv.getContext("2d");
+
+  ctx.save();
+  if(S.facing==="user"){ ctx.translate(cv.width,0); ctx.scale(-1,1); }
+  ctx.drawImage(video, sx,sy,sw,sh, 0,0, cv.width,cv.height);
+  ctx.restore();
+
+  /* حرق الفلتر */
+  const f=FILTERS.find(x=>x.id===S.filterId);
+  const {M,off}=matrixOf(f?f.ops:{});
+  const nOfOps = Object.keys((f&&f.ops)||{}).length;
+  if(nOfOps){
+    const img=ctx.getImageData(0,0,cv.width,cv.height);
+    const d=img.data, m00=M[0][0],m01=M[0][1],m02=M[0][2],
+          m10=M[1][0],m11=M[1][1],m12=M[1][2],
+          m20=M[2][0],m21=M[2][1],m22=M[2][2],
+          o0=off[0],o1=off[1],o2=off[2];
+    for(let i=0;i<d.length;i+=4){
+      let r=d[i],g=d[i+1],b=d[i+2];
+      if(LUT.on){
+        const o=lutApply(r,g,b);
+        r=o[0]; g=o[1]; b=o[2];
+      }
+      d[i]  =m00*r+m01*g+m02*b+o0;
+      d[i+1]=m10*r+m11*g+m12*b+o1;
+      d[i+2]=m20*r+m21*g+m22*b+o2;
+    }
+    ctx.putImageData(img,0,0);
+  } else if(LUT.on){
+    const img=ctx.getImageData(0,0,cv.width,cv.height);
+    const d=img.data;
+    for(let i=0;i<d.length;i+=4){
+      const o=lutApply(d[i],d[i+1],d[i+2]);
+      d[i]=o[0]; d[i+1]=o[1]; d[i+2]=o[2];
+    }
+    ctx.putImageData(img,0,0);
+  }
+
+  /* تظليل الأطراف */
+  if(S.vignette){
+    const g=ctx.createRadialGradient(cv.width/2,cv.height/2,Math.min(cv.width,cv.height)*.34,
+                                     cv.width/2,cv.height/2,Math.max(cv.width,cv.height)*.78);
+    g.addColorStop(0,"rgba(0,0,0,0)"); g.addColorStop(1,"rgba(0,0,0,.55)");
+    ctx.fillStyle=g; ctx.fillRect(0,0,cv.width,cv.height);
+  }
+  /* حبيبات */
+  if(S.grain){
+    ctx.globalAlpha=.16; ctx.globalCompositeOperation="overlay";
+    const gsrc=$("grain").style.backgroundImage;
+    if(gsrc){
+      const img=new Image();
+      try{ img.src=gsrc.slice(5,-2); }catch(_){}
+      // نرسمها بشكل متكرر بسرعة عبر pattern
+      try{
+        const pat=ctx.createPattern(makeTile(),"repeat");
+        if(pat){ ctx.fillStyle=pat; ctx.fillRect(0,0,cv.width,cv.height); }
+      }catch(_){}
+    }
+    ctx.globalAlpha=1; ctx.globalCompositeOperation="source-over";
+  }
+  return cv;
+}
+let _tile=null;
+function makeTile(){
+  if(_tile) return _tile;
+  const c=document.createElement("canvas"); c.width=c.height=140;
+  const ctx=c.getContext("2d"); const im=ctx.createImageData(140,140);
+  for(let i=0;i<im.data.length;i+=4){
+    const v=Math.random()*255|0;
+    im.data[i]=im.data[i+1]=im.data[i+2]=v; im.data[i+3]=30;
+  }
+  ctx.putImageData(im,0,0); _tile=c; return c;
+}
+
+function shutter(){
+  if(!S.stream) return;
+  if(S.timer){
+    let n=S.timer;
+    const el=$("timerNum"); el.style.display="grid"; el.textContent=n;
+    const iv=setInterval(()=>{
+      n--;
+      if(n<=0){ clearInterval(iv); el.style.display="none"; doShot(); }
+      else el.textContent=n;
+    },1000);
+  } else doShot();
+}
+
+async function doShot(){
+  const cv=capture(); if(!cv) return;
+  $("flash").style.opacity=".9";
+  setTimeout(()=>$("flash").style.opacity="0",90);
+
+  cv.toBlob(b=>{
+    if(!b) return;
+    if(S.lastURL) URL.revokeObjectURL(S.lastURL);
+    S.lastBlob=b; S.lastURL=URL.createObjectURL(b);
+    $("rimgEl").src=S.lastURL;
+    $("result").classList.add("show");
+    // صورة مصغّرة في الشاشة الرئيسية
+    const m=$("mini"); m.style.backgroundImage=`url(${S.lastURL})`; m.style.display="block";
+  }, "image/jpeg", 0.94);
+}
+
+/* ==========================================================
+   6) الحفظ على الآيفون
+   ========================================================== */
+async function savePhoto(){
+  if(!S.lastBlob) return;
+  const file=new File([S.lastBlob], `filter-${Date.now()}.jpg`, {type:"image/jpeg"});
+  // الأفضل على iOS: مشاركة → "حفظ الصورة" تضعها في ألبوم الصور
+  if(navigator.canShare && navigator.canShare({files:[file]})){
+    try{
+      await navigator.share({files:[file], title:"لقطة"});
+      return;
+    }catch(e){ if(e && e.name==="AbortError") return; }
+  }
+  downloadPhoto();
+}
+function downloadPhoto(){
+  if(!S.lastBlob) return;
+  const a=document.createElement("a");
+  a.href=S.lastURL; a.download=`filter-${Date.now()}.jpg`;
+  document.body.appendChild(a); a.click(); a.remove();
+  $("hint").textContent="نُزّلت إلى ملفات iPhone ← التنزيلات. افتحها واضغط «حفظ الصورة» لتصل إلى ألبوم الصور.";
+}
+
+/* ==========================================================
+   7) الأحداث
+   ========================================================== */
+$("startBtn").onclick = ()=>startCamera();
+$("shutter").onclick  = shutter;
+
+$("flip").onclick = ()=>{
+  S.facing = S.facing==="user" ? "environment" : "user";
+  startCamera();
+};
+
+// مؤقت
+const TIMERS=[0,3,5,10];
+$("btnTimer").onclick=()=>{
+  const i=TIMERS.indexOf(S.timer);
+  S.timer=TIMERS[(i+1)%TIMERS.length];
+  $("btnTimer").classList.toggle("on", S.timer>0);
+  $("timerLbl").textContent = S.timer? S.timer+"ث" : "مؤقت";
+};
+
+// شبكة
+$("btnGrid").onclick=()=>{
+  S.grid=!S.grid;
+  $("grid").style.display=S.grid?"block":"none";
+  $("btnGrid").classList.toggle("on",S.grid);
+};
+
+// تأثيرات: حبيبات + تظليل
+$("btnFx").onclick=()=>{
+  // دورة: لا شيء ← حبيبات ← تظليل ← كلاهما
+  const state=(S.grain?1:0)+(S.vignette?2:0);
+  const next=(state+1)%4;
+  S.grain  = !!(next&1);
+  S.vignette = !!(next&2);
+  $("grain").style.display   = S.grain?"block":"none";
+  $("vignette").style.display= S.vignette?"block":"none";
+  $("btnFx").classList.toggle("on", S.grain||S.vignette);
+};
+
+// جودة
+$("btnHi").onclick=()=>{
+  S.hq=!S.hq;
+  $("btnHi").classList.toggle("on",!S.hq);
+  $("btnHi").querySelector("span:last-child").textContent = S.hq?"4K":"HD";
+};
+
+$("rclose").onclick=()=>{
+  $("result").classList.remove("show");
+  if(S.lastURL){ URL.revokeObjectURL(S.lastURL); S.lastURL=null; S.lastBlob=null; }
+};
+$("rshare").onclick=savePhoto;
+$("rsave").onclick=downloadPhoto;
+
+// زر الصوت في iOS كغالق للكاميرا (اختصار مريح)
+document.addEventListener("keydown",e=>{
+  if(e.key===" "||e.key==="Enter"){ e.preventDefault(); shutter(); }
+  if(e.key==="Escape"){ $("rclose").click(); }
+});
+
+// تنظيف
+window.addEventListener("pagehide",()=>{ if(S.stream) S.stream.getTracks().forEach(t=>t.stop()); });
+
+
+/* ==========================================================
+   8) العمل بلا إنترنت (Service Worker)
+   ========================================================== */
+let SW_STATE = "unknown";   // ready | unsupported | failed | registering
+function setOfflineBadge(txt, cls){
+  const el = document.getElementById("offlineBadge");
+  if(!el) return;
+  el.textContent = txt;
+  el.className = "offbadge " + (cls||"");
+}
+async function registerSW(){
+  if(!("serviceWorker" in navigator)){
+    SW_STATE="unsupported"; setOfflineBadge("بلا حفظ", "warn"); return;
+  }
+  if(location.protocol!=="https:" && location.hostname!=="localhost" && location.hostname!=="127.0.0.1"){
+    SW_STATE="unsupported"; setOfflineBadge("يحتاج HTTPS", "warn"); return;
+  }
+  SW_STATE="registering";
+  try{
+    const reg = await navigator.serviceWorker.register("sw.js", {scope:"./"});
+    // انتظر حتى يصبح جاهزًا (يُخزّن كل الملفات)
+    const ready = await navigator.serviceWorker.ready;
+    if(ready && (ready.active || reg.active)){
+      SW_STATE="ready"; setOfflineBadge("يعمل بلا نت ✓", "ok");
+    } else {
+      SW_STATE="registering"; setOfflineBadge("يُحضّر…", "");
+    }
+  }catch(e){
+    SW_STATE="failed";
+    setOfflineBadge("فشل الحفظ", "warn");
+  }
+}
+window.addEventListener("online",  ()=>setOfflineBadge(SW_STATE==="ready"?"يعمل بلا نت ✓":"متصل","ok"));
+window.addEventListener("offline", ()=>{ if(SW_STATE==="ready") setOfflineBadge("بلا نت — يعمل ✓","ok"); });
+
+/* عرض الحالة على شاشة البدء */
+function paintGateStatus(){
+  const el=document.getElementById("gateStatus");
+  if(!el) return;
+  if(SW_STATE==="ready"){ el.innerHTML='<span style="color:#7ee787">✓</span> محفوظ على جهازك — سيعمل بلا إنترنت'; }
+  else if(SW_STATE==="registering"){ el.textContent="يُحضّر للعمل بلا إنترنت…"; }
+  else if(SW_STATE==="unsupported"){ el.textContent="ملاحظة: هذا المتصفح لا يدعم الحفظ (افتحه من Safari)"; }
+  else if(SW_STATE==="failed"){ el.textContent="تعذّر الحفظ للعمل بلا إنترنت"; }
+  else { el.textContent=""; }
+}
+
+registerSW().then(paintGateStatus);
+setInterval(paintGateStatus, 1500);
+
+
+/* استيراد LUT */
+document.addEventListener("change", async e=>{
+  if(e.target && e.target.id==="lutFile"){
+    const f=e.target.files && e.target.files[0];
+    if(!f) return;
+    const r=await loadCubeFile(f);
+    if(r){
+      $("filterName").textContent="LUT · "+r.title;
+      const item=$("lutItem");
+      if(item){ item.querySelector(".fdot").textContent="✓";
+                item.querySelector(".fname").textContent=r.n+"pt"; }
+      paintThumbs();
+      try{ localStorage.setItem("lutName", r.title); }catch(_){}
+    }
+    e.target.value="";
+  }
+});
+/* نقر مطوّل على عنصر LUT = إزالته */
+document.addEventListener("contextmenu", e=>{
+  const it=e.target.closest && e.target.closest("#lutItem");
+  if(it){ e.preventDefault(); LUT.on=false; LUT.grid=null; _lutMap=null;
+    $("filterName").textContent="أصلي";
+    it.querySelector(".fdot").textContent="＋"; it.querySelector(".fname").textContent="LUT";
+    paintThumbs(); }
+});
+
+/* تهيئة */
+buildStrip();
+selectFilter("none");
+$("btnHi").querySelector("span:last-child").textContent="4K";
+
+// إخفاء شاشة البدء تلقائيًا إن كانت الكاميرا مسموحة سلفًا
+if(location.protocol!=="https:" && location.hostname!=="localhost"){
+  // http لا يسمح بالكاميرا على iOS — ننبّه فقط
+  $("startBtn").textContent="الكاميرا تحتاج HTTPS";
+}
+</script>
+</body>
+</html>
