@@ -2,7 +2,7 @@
    الغرض: تشغيل التطبيق كاملًا بلا إنترنت بعد أول فتحة.
    كل شيء داخل المتصفح: لا شبكة، لا سيرفر، لا رفع صور. */
 
-const VERSION = "filters-v2";
+const VERSION = "filters-v3";
 const ASSETS = [
   "./",
   "./index.html",
