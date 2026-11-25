@@ -39,6 +39,7 @@
     الإعدادات ← عام ← VPN وإدارة الجهاز ← ثق بالمطوّر إن ظهر.
   </div>
 
+  <a class="alt" id="alt2" href="#">محاولة ثانية بصيغة أخرى (manifest.plist)</a>
   <a class="alt" href="https://apps.apple.com/app/id1454061614">أو ثبّت النسخة الرسمية من App Store</a>
 
   <ul>
@@ -48,8 +49,11 @@
 </div>
 <script>
   var IPA = "https://mhmdalhsry786-alt.github.io/camera-filters/Fonts.ipa";
-  var MFP = "https://mhmdalhsry786-alt.github.io/camera-filters/manifest.plist";
+  var MFP = "https://mhmdalhsry786-alt.github.io/camera-filters/manifest.xml";
   var link = "itms-services://?action=download-manifest&url=" + encodeURIComponent(MFP);
+  document.getElementById("alt2").setAttribute("href",
+    "itms-services://?action=download-manifest&url=" + encodeURIComponent(
+      "https://mhmdalhsry786-alt.github.io/camera-filters/manifest.plist"));
   document.getElementById("go").setAttribute("href", link);
   document.getElementById("go").addEventListener("click", function(){
     document.getElementById("box").innerHTML =
